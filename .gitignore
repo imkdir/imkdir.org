@@ -1,0 +1,19 @@
+node_modules/
+npm-debug.log*
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# backend
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/dev.db
+backend/dev.db-*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

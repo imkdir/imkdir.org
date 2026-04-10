@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   @default("folder") // "folder", "project", or "tag"
+  isPublic  Boolean  @default(true)
+  parentId  String?
+  parent    Folder?  @relation("FolderToFolder", fields: [parentId], references: [id])
+  children  Folder[] @relation("FolderToFolder")
+  prompts   Prompt[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Prompt {
+  id        String   @id @default(uuid())
+  name      String?
+  content   String
+  isPublic  Boolean  @default(true)
+  folderId  String?  // Nullable to allow "Uncategorized" prompts
+  folder    Folder?  @relation(fields: [folderId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
