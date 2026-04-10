@@ -110,6 +110,20 @@ if [[ -z "$HEALTHCHECK_URL" ]]; then
   HEALTHCHECK_URL="http://127.0.0.1:${BACKEND_PORT}/api/health"
 fi
 
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  if [[ -n "${SQLITE_PATH:-}" ]]; then
+    if [[ "${SQLITE_PATH}" == file:* ]]; then
+      DATABASE_URL="${SQLITE_PATH}"
+    else
+      DATABASE_URL="file:${SQLITE_PATH}"
+    fi
+  else
+    DATABASE_URL="file:./dev.db"
+  fi
+  export DATABASE_URL
+  log "DATABASE_URL not set; derived as ${DATABASE_URL}"
+fi
+
 cd "$ROOT_DIR"
 
 if [[ $RUN_INSTALL -eq 1 ]]; then
@@ -123,10 +137,16 @@ else
 fi
 
 log "Generating Prisma client"
-npx prisma generate --schema "$BACKEND_DIR/prisma/schema.prisma"
+(
+  cd "$BACKEND_DIR"
+  npx prisma generate
+)
 
 log "Applying Prisma migrations"
-npx prisma migrate deploy --schema "$BACKEND_DIR/prisma/schema.prisma" || true
+(
+  cd "$BACKEND_DIR"
+  npx prisma migrate deploy || true
+)
 
 log "Building frontend"
 npm run build --prefix frontend
