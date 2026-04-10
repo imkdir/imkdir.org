@@ -45,6 +45,25 @@ fail() {
   exit 1
 }
 
+check_pm2_startup_service() {
+  local pm2_user service_name
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  pm2_user="${PM2_SYSTEM_USER:-${SUDO_USER:-$USER}}"
+  service_name="pm2-${pm2_user}"
+
+  if systemctl is-enabled "$service_name" >/dev/null 2>&1; then
+    log "PM2 startup service enabled (${service_name})"
+    return 0
+  fi
+
+  printf '\nWARNING: PM2 startup service is not enabled (%s).\n' "$service_name" >&2
+  printf 'Run once on the server: bash scripts/ensure-pm2-persistence.sh\n' >&2
+}
+
 check_health_with_retry() {
   local url="$1"
   local attempts="${2:-20}"
@@ -171,6 +190,7 @@ if [[ $RUN_RESTART -eq 1 ]]; then
     PORT="$BACKEND_PORT" pm2 start "$BACKEND_DIR/dist/src/index.js" --name "$PM2_NAME"
   fi
   pm2 save
+  check_pm2_startup_service
 fi
 
 if [[ $RUN_HEALTHCHECK -eq 1 ]]; then

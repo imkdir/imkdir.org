@@ -4,7 +4,7 @@ This project deploys as:
 
 - static frontend (`frontend/dist`)
 - Node.js backend (`backend/dist/src/index.js`)
-- SQLite database (`backend/dev.db`)
+- SQLite database (path from `SQLITE_PATH` or `DATABASE_URL=file:...`)
 - Caddy reverse proxy (shared with other apps on same VPS)
 
 Primary workflow:
@@ -26,7 +26,7 @@ Important runtime paths:
 
 - `<APP_ROOT>/frontend/dist`
 - `<APP_ROOT>/backend`
-- `<APP_ROOT>/backend/dev.db`
+- SQLite runtime path from backend env (`SQLITE_PATH` or `DATABASE_URL=file:...`)
 
 ## Environment Variables
 
@@ -88,6 +88,20 @@ cd <APP_ROOT>
 bash scripts/deploy.sh
 ```
 
+6. One-time PM2 reboot persistence setup:
+
+```bash
+cd <APP_ROOT>
+bash scripts/ensure-pm2-persistence.sh
+```
+
+7. One-time daily backup cron setup:
+
+```bash
+cd <APP_ROOT>
+bash scripts/install-backup-cron.sh
+```
+
 ## Deploy Script
 
 Run on VPS:
@@ -121,6 +135,11 @@ What script does:
 4. Builds frontend and backend
 5. Restarts backend with PM2
 6. Checks `/api/health`
+
+Notes:
+
+- Script saves PM2 process list (`pm2 save`).
+- Script warns if PM2 startup service is not enabled on boot.
 
 ## Caddy Configuration (Shared VPS)
 
@@ -186,14 +205,51 @@ sudo APP_ROOT=<APP_ROOT> BACKUP_DIR=/var/backups/imkdir-org RETENTION_DAYS=7 ./s
 
 Backs up:
 
-- `<APP_ROOT>/backend/dev.db`
+- SQLite DB resolved from `SQLITE_PATH` (or `DATABASE_URL=file:...`, fallback `backend/dev.db`)
 - `<APP_ROOT>/backend/.env`
 
-Example cron:
+Install/update daily backup cron (recommended):
+
+```bash
+cd <APP_ROOT>
+bash scripts/install-backup-cron.sh
+```
+
+Optional overrides:
+
+```bash
+cd <APP_ROOT>
+CRON_SCHEDULE="30 2 * * *" \
+BACKUP_DIR=/var/backups/imkdir-org \
+RETENTION_DAYS=14 \
+LOG_PATH=/var/log/imkdir-backup.log \
+bash scripts/install-backup-cron.sh
+```
+
+If you prefer manual cron entry:
 
 ```cron
-15 3 * * * APP_ROOT=<APP_ROOT> BACKUP_DIR=/var/backups/imkdir-org RETENTION_DAYS=7 <APP_ROOT>/scripts/backup-backend.sh >> /var/log/imkdir-backup.log 2>&1
+15 3 * * * APP_ROOT=<APP_ROOT> BACKUP_DIR=/var/backups/imkdir-org RETENTION_DAYS=7 /bin/bash <APP_ROOT>/scripts/backup-backend.sh >> /var/log/imkdir-backup.log 2>&1 # imkdir-org-backup
 ```
+
+## Post-Deploy Smoke Checklist
+
+Run after each deploy:
+
+```bash
+cd <APP_ROOT>
+pm2 status imkdir-backend
+curl -fsS http://127.0.0.1:<PORT>/api/health
+curl -I https://www.imkdir.org
+```
+
+Quick checks:
+
+- PM2 process is `online`
+- health endpoint returns JSON with `"status": "ok"`
+- site returns `HTTP/2 200` (or redirect + `200`)
+- creating/updating data works as owner key
+- public/private visibility behaves correctly for non-owner view
 
 ## Constraints
 

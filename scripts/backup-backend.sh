@@ -19,10 +19,10 @@ APP_ROOT="${APP_ROOT:-${DEPLOY_DIR:-$PROJECT_ROOT}}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/imkdir-org}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 BACKEND_DIR="${APP_ROOT}/backend"
-DB_PATH="${BACKEND_DIR}/dev.db"
 ENV_PATH="${BACKEND_DIR}/.env"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 ARCHIVE_PATH="${BACKUP_DIR}/imkdir-backup-${TIMESTAMP}.tar.gz"
+DB_PATH="${BACKEND_DIR}/dev.db"
 
 mkdir -p "${BACKUP_DIR}"
 
@@ -32,11 +32,36 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [[ -f "${ENV_PATH}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_PATH}"
+  set +a
+fi
+
+if [[ -n "${SQLITE_PATH:-}" ]]; then
+  SQLITE_RESOLVED="${SQLITE_PATH#file:}"
+  if [[ "${SQLITE_RESOLVED}" = /* ]]; then
+    DB_PATH="${SQLITE_RESOLVED}"
+  else
+    DB_PATH="${BACKEND_DIR}/${SQLITE_RESOLVED}"
+  fi
+elif [[ "${DATABASE_URL:-}" == file:* ]]; then
+  SQLITE_RESOLVED="${DATABASE_URL#file:}"
+  if [[ "${SQLITE_RESOLVED}" = /* ]]; then
+    DB_PATH="${SQLITE_RESOLVED}"
+  else
+    DB_PATH="${BACKEND_DIR}/${SQLITE_RESOLVED}"
+  fi
+fi
+
+DB_BASENAME="$(basename "${DB_PATH}")"
+
 if [[ -f "${DB_PATH}" ]]; then
   if command -v sqlite3 >/dev/null 2>&1; then
-    sqlite3 "${DB_PATH}" ".backup '${TMP_DIR}/dev.db'"
+    sqlite3 "${DB_PATH}" ".backup '${TMP_DIR}/${DB_BASENAME}'"
   else
-    cp "${DB_PATH}" "${TMP_DIR}/dev.db"
+    cp "${DB_PATH}" "${TMP_DIR}/${DB_BASENAME}"
   fi
 else
   echo "Warning: DB file not found at ${DB_PATH}"

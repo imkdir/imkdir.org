@@ -415,11 +415,6 @@ export default function App() {
           <span className="text-indigo-500">imkdir</span>.org
         </h1>
         <div className="ml-auto flex items-center gap-3">
-          <div className="text-xs text-neutral-500 italic">
-            {isOwner
-              ? "Tip: Paste anywhere to automatically create a prompt"
-              : "Viewer mode: only public folders and prompts are visible"}
-          </div>
           <span
             className={`text-xs px-2 py-1 rounded border ${
               isOwner
