@@ -45,6 +45,22 @@ fail() {
   exit 1
 }
 
+check_health_with_retry() {
+  local url="$1"
+  local attempts="${2:-20}"
+  local sleep_seconds="${3:-1}"
+  local i
+
+  for ((i = 1; i <= attempts; i++)); do
+    if curl --fail --silent --show-error "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$sleep_seconds"
+  done
+
+  return 1
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-install)
@@ -132,15 +148,24 @@ if [[ $RUN_RESTART -eq 1 ]]; then
   if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
     PORT="$BACKEND_PORT" pm2 restart "$PM2_NAME" --update-env
   else
-    PORT="$BACKEND_PORT" pm2 start npm --name "$PM2_NAME" -- start --prefix backend
+    PORT="$BACKEND_PORT" pm2 start "$BACKEND_DIR/dist/src/index.js" --name "$PM2_NAME"
   fi
   pm2 save
 fi
 
 if [[ $RUN_HEALTHCHECK -eq 1 ]]; then
   log "Checking health endpoint: ${HEALTHCHECK_URL}"
-  curl --fail --silent --show-error "$HEALTHCHECK_URL"
-  printf '\n'
+  if check_health_with_retry "$HEALTHCHECK_URL" 30 1; then
+    curl --fail --silent --show-error "$HEALTHCHECK_URL"
+    printf '\n'
+  else
+    printf '\nHealth check failed after retries.\n' >&2
+    if command -v pm2 >/dev/null 2>&1; then
+      pm2 status "$PM2_NAME" || true
+      pm2 logs "$PM2_NAME" --lines 80 --nostream || true
+    fi
+    fail "Backend did not become healthy at ${HEALTHCHECK_URL}"
+  fi
 fi
 
 log "Deployment complete"
