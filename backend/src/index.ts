@@ -49,8 +49,16 @@ const sqlitePath =
   "./dev.db";
 
 const portValue = getEnvValue("PORT");
-const parsedPort = portValue ? Number(portValue) : NaN;
-const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3001;
+if (!portValue) {
+  throw new Error(
+    "PORT is required. Set PORT in backend/.env or environment variables.",
+  );
+}
+const parsedPort = Number(portValue);
+if (!Number.isFinite(parsedPort) || parsedPort <= 0) {
+  throw new Error(`Invalid PORT value: ${portValue}`);
+}
+const port = parsedPort;
 
 const ownerSecretKey = getEnvValue("OWNER_SECRET_KEY") || "mock-owner-token";
 

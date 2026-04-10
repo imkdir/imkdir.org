@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
-FRONTEND_DIR="$ROOT_DIR/frontend"
 
 RUN_INSTALL=1
 RUN_LINT=0
@@ -33,7 +32,7 @@ Environment:
 
 Notes:
   - If backend/.env exists, it is loaded automatically.
-  - Backend port uses PORT from backend/.env (or defaults to 3001).
+  - Backend port uses PORT from backend/.env or environment variables.
 EOF
 }
 
@@ -89,7 +88,8 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
   set +a
 fi
 
-BACKEND_PORT="${PORT:-3001}"
+[[ -n "${PORT:-}" ]] || fail "PORT is required (set in backend/.env or env vars)"
+BACKEND_PORT="${PORT}"
 if [[ -z "$HEALTHCHECK_URL" ]]; then
   HEALTHCHECK_URL="http://127.0.0.1:${BACKEND_PORT}/api/health"
 fi

@@ -1,270 +1,205 @@
 # Deployment Plan
 
-This project is best deployed as:
+This project deploys as:
 
-- a static frontend build (`frontend/dist`)
-- a Node.js backend process (`backend/dist/src/index.js`)
-- a persistent SQLite database file (`backend/dev.db`)
+- static frontend (`frontend/dist`)
+- Node.js backend (`backend/dist/src/index.js`)
+- SQLite database (`backend/dev.db`)
+- Caddy reverse proxy (shared with other apps on same VPS)
 
-The current backend uses `better-sqlite3` with a local SQLite file and is designed for single-node deployment.
+Primary workflow:
 
-## Recommended Architecture
+1. SSH into VPS
+2. `cd <APP_ROOT>`
+3. `git pull`
+4. `bash scripts/deploy.sh`
 
-Use one Linux VM/VPS for both frontend and backend:
+## Paths
 
-- `Node.js 22+`
-- `npm 10+`
-- `pm2` for backend process management
-- `nginx` or `Caddy` as reverse proxy
+Use `<APP_ROOT>` as your repo directory on VPS.
 
-Recommended paths:
+Example:
 
-- app root: `/var/www/imkdir-org`
-- frontend build: `/var/www/imkdir-org/frontend/dist`
-- backend app: `/var/www/imkdir-org/backend`
-- sqlite db: `/var/www/imkdir-org/backend/dev.db`
+- `<APP_ROOT>=/srv/imkdir-org/current`
 
-Notes:
+Important runtime paths:
 
-- VPS deploy flow is scripted in [`scripts/deploy.sh`](/Users/imkdir/Projects/imkdir.org/scripts/deploy.sh).
-- `backend/dev.db` remains on VPS and persists across deploys.
+- `<APP_ROOT>/frontend/dist`
+- `<APP_ROOT>/backend`
+- `<APP_ROOT>/backend/dev.db`
 
 ## Environment Variables
 
-Backend supports:
+Backend (`backend/.env`):
 
-- `PORT` (optional, default `3001`)
-- `OWNER_SECRET_KEY` (required for owner-mode auth in production)
-- `SQLITE_PATH` (optional, default `./dev.db`)
-- `DATABASE_URL` (used by Prisma tooling/migrations; runtime currently uses `./dev.db`)
+- `PORT` (required)
+- `OWNER_SECRET_KEY` (required)
+- `SQLITE_PATH` (recommended, default `./dev.db` if omitted)
+- `DATABASE_URL` (used by Prisma CLI)
 
-Suggested backend `.env` on VPS (`/var/www/imkdir-org/backend/.env`):
+Suggested `backend/.env`:
 
 ```env
-PORT=3001
+PORT=3011
 OWNER_SECRET_KEY=replace-with-a-long-random-secret
 SQLITE_PATH="./dev.db"
 DATABASE_URL="file:./dev.db"
 ```
 
-Frontend currently calls API at `http://localhost:3001/api` in source code.  
-In production, use reverse proxy so browser requests stay same-origin.
+Frontend:
 
-## First-Time Server Setup
+- `VITE_API_BASE_URL` (optional)
 
-1. Install system packages:
+Behavior:
+
+- If `VITE_API_BASE_URL` is not set, frontend uses `/api` (same-origin).
+- This is ideal when Caddy proxies `/api` to backend.
+
+## First-Time VPS Setup
+
+1. Install dependencies:
 
 ```bash
 sudo apt update
-sudo apt install -y nginx rsync
-```
-
-2. Install Node.js (22+) and npm (10+).
-3. Install PM2 globally:
-
-```bash
+sudo apt install -y rsync
 sudo npm i -g pm2
 ```
 
-4. Create deploy directory:
+2. Ensure Caddy is already installed/running (shared server setup).
+3. Clone repo:
 
 ```bash
-sudo mkdir -p /var/www/imkdir-org
-sudo chown -R $USER:$USER /var/www/imkdir-org
+git clone <your-repo-url> <APP_ROOT>
+cd <APP_ROOT>
 ```
 
-5. Clone repo on VPS:
+4. Configure backend env:
 
 ```bash
-cd /var/www
-git clone <your-repo-url> imkdir-org
-cd /var/www/imkdir-org
+cd <APP_ROOT>/backend
+cp .env.example .env
+# edit .env values
 ```
 
-6. On VPS, create backend `.env`:
+5. First deploy:
 
 ```bash
-cd /var/www/imkdir-org/backend
-cp .env.example .env 2>/dev/null || true
-cat > .env <<'EOF'
-PORT=3001
-OWNER_SECRET_KEY=replace-with-a-long-random-secret
-SQLITE_PATH="./dev.db"
-DATABASE_URL="file:./dev.db"
-EOF
-```
-
-7. Run deploy script on VPS:
-
-```bash
+cd <APP_ROOT>
 bash scripts/deploy.sh
 ```
 
-8. Configure Nginx on VPS using the helper script:
+## Deploy Script
+
+Run on VPS:
 
 ```bash
-sudo DOMAIN=imkdir.org BACKEND_PORT=3001 ./scripts/setup-nginx.sh
-```
-
-## Release Procedure
-
-For each deploy on VPS:
-
-```bash
-cd /var/www/imkdir-org
+cd <APP_ROOT>
 git pull
 bash scripts/deploy.sh
 ```
 
-Optional variables:
+Options:
 
-- `PM2_NAME` (default `imkdir-backend`)
-- `HEALTHCHECK_URL` (default `http://127.0.0.1:$PORT/api/health`)
-- `PORT` via `backend/.env` (default `3001`)
+- `--skip-install`
+- `--lint`
+- `--skip-restart`
+- `--skip-healthcheck`
+- `--pm2-name <name>`
+- `--health-url <url>`
+
+Environment overrides:
+
+- `PORT=3011` (if not set in `backend/.env`)
+- `PM2_NAME=imkdir-backend`
+- `HEALTHCHECK_URL=http://127.0.0.1:3011/api/health`
 
 What script does:
 
-1. Loads backend env from `backend/.env` (if present).
-2. Installs dependencies (`npm ci`) for frontend/backend.
-3. Runs Prisma generate and migrations.
-4. Builds frontend and backend.
-5. Restarts/starts backend via PM2.
-6. Verifies `/api/health`.
+1. Loads `backend/.env` if present
+2. Installs frontend/backend dependencies (`npm ci`)
+3. Runs Prisma generate and migrations
+4. Builds frontend and backend
+5. Restarts backend with PM2
+6. Checks `/api/health`
 
-## Reverse Proxy (Nginx)
+## Caddy Configuration (Shared VPS)
 
-You can configure Nginx automatically:
+If Caddy already serves another project on `:80`, keep using Caddy and add an additional site block.
 
-```bash
-sudo DOMAIN=imkdir.org BACKEND_PORT=3001 ./scripts/setup-nginx.sh
-```
+Example Caddy block for this app:
 
-Optional vars for this script:
+```caddy
+imkdir.org, www.imkdir.org {
+    root * <APP_ROOT>/frontend/dist
 
-- `DEPLOY_DIR` (default `/var/www/imkdir-org`)
-- `SITE_NAME` (default `imkdir-org`)
-- `INCLUDE_WWW` (default `true`)
-
-Example single-domain config (`imkdir.org`) with API proxy:
-
-```nginx
-server {
-    listen 80;
-    server_name imkdir.org www.imkdir.org;
-
-    root /var/www/imkdir-org/frontend/dist;
-    index index.html;
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:3001/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3011
     }
 
-    location / {
-        try_files $uri /index.html;
+    handle {
+        try_files {path} /index.html
+        file_server
     }
 }
 ```
 
-Then enable and reload:
+Apply config:
 
 ```bash
-sudo nginx -t
-sudo systemctl reload nginx
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
 ```
 
-## If Backend Port Is Already Taken
+## If Port Is Already Taken
 
-Yes, this is common when multiple projects share one VPS.
+Pick another backend port and keep it consistent between backend and Caddy.
 
-1. Pick a free port (example `3011`).
-2. Deploy backend with that port:
+Example using `3011`:
 
 ```bash
-cd /var/www/imkdir-org
+cd <APP_ROOT>
 git pull
 PORT=3011 bash scripts/deploy.sh
 ```
 
-3. Configure Nginx to proxy `/api` to the same port:
+Then update Caddy `reverse_proxy 127.0.0.1:3011`.
+
+Check listeners:
 
 ```bash
-sudo DOMAIN=imkdir.org BACKEND_PORT=3011 ./scripts/setup-nginx.sh
+sudo ss -ltnp | rg ':80|:3011'
 ```
 
-4. Check which process currently uses a port:
+## Health Check
+
+Backend endpoint:
+
+- `GET /api/health`
+
+## Backups
+
+Use `scripts/backup-backend.sh`:
 
 ```bash
-sudo ss -ltnp | rg ':3001|:3011'
+sudo APP_ROOT=<APP_ROOT> BACKUP_DIR=/var/backups/imkdir-org RETENTION_DAYS=7 ./scripts/backup-backend.sh
 ```
 
-Important:
+Backs up:
 
-- backend `PORT` in `.env` (or shell env) controls PM2 runtime port for this app.
-- `BACKEND_PORT` in `setup-nginx.sh` must match backend `PORT`.
+- `<APP_ROOT>/backend/dev.db`
+- `<APP_ROOT>/backend/.env`
 
-## Can One VPS Host Multiple Vite Projects?
-
-Yes. A single VPS can host multiple Vite-built apps.
-
-Common patterns:
-
-- separate domains/subdomains per app:
-  - `app1.example.com` -> `/var/www/app1/dist`
-  - `app2.example.com` -> `/var/www/app2/dist`
-- or same domain with path prefixes:
-  - `/app1` and `/app2` (requires base path config in each frontend build)
-
-For multiple backends, run each on a different local port (`3001`, `3002`, etc.) and route with Nginx by domain or path.
-
-## Post-Deploy Verification
-
-Check after each deploy:
-
-1. Frontend loads from domain.
-2. `GET /api/health` responds.
-3. Owner login works using `OWNER_SECRET_KEY`.
-4. CRUD works for folders/prompts in owner mode.
-5. Viewer mode only sees public items.
-
-## Backup Plan
-
-Back up:
-
-- `/var/www/imkdir-org/backend/dev.db`
-- `/var/www/imkdir-org/backend/.env`
-
-Minimum recommendation:
-
-- daily DB backup
-- keep at least 7 restore points
-
-SQLite note:
-
-- for safest backups, briefly stop backend process or use SQLite online backup tooling.
-
-Automated backup script is available:
-
-```bash
-sudo DEPLOY_DIR=/var/www/imkdir-org BACKUP_DIR=/var/backups/imkdir-org RETENTION_DAYS=7 ./scripts/backup-backend.sh
-```
-
-Example cron (daily at 03:15):
+Example cron:
 
 ```cron
-15 3 * * * DEPLOY_DIR=/var/www/imkdir-org BACKUP_DIR=/var/backups/imkdir-org RETENTION_DAYS=7 /var/www/imkdir-org/scripts/backup-backend.sh >> /var/log/imkdir-backup.log 2>&1
+15 3 * * * APP_ROOT=<APP_ROOT> BACKUP_DIR=/var/backups/imkdir-org RETENTION_DAYS=7 <APP_ROOT>/scripts/backup-backend.sh >> /var/log/imkdir-backup.log 2>&1
 ```
 
-## Known Deployment Constraints
+## Constraints
 
 - SQLite is suitable for single-node deployments, not multi-writer horizontal scale.
 
-## Recommended Follow-Ups
+## Future Improvements
 
-- move frontend API base URL to env for multi-environment builds
-- add restore script companion for backup archives
-- consider managed Postgres if horizontal scale is needed
+- add restore script for backup archives
+- move to managed Postgres if horizontal scaling is required

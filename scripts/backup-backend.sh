@@ -4,17 +4,21 @@ set -euo pipefail
 # Backup backend SQLite DB + .env with retention.
 #
 # Optional env vars:
-#   DEPLOY_DIR       default: /var/www/imkdir-org
+#   APP_ROOT         default: repo root (parent of this script)
+#   DEPLOY_DIR       legacy alias for APP_ROOT
 #   BACKUP_DIR       default: /var/backups/imkdir-org
 #   RETENTION_DAYS   default: 7
 #
 # Usage:
 #   sudo ./scripts/backup-backend.sh
 
-DEPLOY_DIR="${DEPLOY_DIR:-/var/www/imkdir-org}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+APP_ROOT="${APP_ROOT:-${DEPLOY_DIR:-$PROJECT_ROOT}}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/imkdir-org}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
-BACKEND_DIR="${DEPLOY_DIR}/backend"
+BACKEND_DIR="${APP_ROOT}/backend"
 DB_PATH="${BACKEND_DIR}/dev.db"
 ENV_PATH="${BACKEND_DIR}/.env"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
