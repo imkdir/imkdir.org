@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type FormEvent } from "react";
 import {
   FileText,
   Copy,
@@ -389,7 +389,8 @@ export default function App() {
     }
   };
 
-  const handleSubmitSecretKey = () => {
+  const handleSubmitSecretKey = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     const normalized = secretKeyInput.trim();
     setAuthTokenState(normalized || null);
     setIsConfirmingDelete(false);
